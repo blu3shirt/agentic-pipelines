@@ -6,8 +6,8 @@ import os
 class CustomRAGDocumentPipeline:
     class Valves(BaseModel):
         # Define valves (configuration values) for document path and other settings
-        DOCUMENT_PATH: str = "/app/backend/data/documents"  # Default document path
-        SAMPLE_API_KEY: str = "default_api_key"  # Sample API key for demonstration
+        DOCUMENT_PATH: str = "/app/backend/data/documents"  # Default document path for documents
+        SAMPLE_API_KEY: str = "default_api_key"  # Placeholder for API key configuration
 
     def __init__(self):
         # Set the name and valves
