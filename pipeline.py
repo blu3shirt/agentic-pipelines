@@ -1,104 +1,87 @@
+"""
+title: Llama Index Ollama Pipeline
+author: open-webui
+date: 2024-05-30
+version: 1.0
+license: MIT
+description: A pipeline for retrieving relevant information from a knowledge base using the Llama Index library with Ollama embeddings.
+requirements: llama-index, llama-index-llms-ollama, llama-index-embeddings-ollama
+"""
+
+from pipelines import Pipeline
+from pydantic import BaseModel
+from typing import List, Union, Generator, Iterator
+from schemas import OpenAIChatMessage
 import os
-import sys
-import json
-from ollama import Ollama
 
-# Initialize Ollama with your quantized Llama2 model
-model = Ollama(model='llama2')
 
-# Directory paths
-VECTOR_STORE_DIR = 'C:\\Ollama\\VectorStore'
-DOCUMENTS_DIR = 'C:\\Ollama\\Documents'
+class LlamaIndexOllamaPipeline(Pipeline):
+    """A pipeline class for Llama Index with Ollama embeddings."""
 
-# Initialize vector store
-vector_store = model.init_vector_store(directory=VECTOR_STORE_DIR)
+    class Valves(BaseModel):
+        LLAMAINDEX_OLLAMA_BASE_URL: str
+        LLAMAINDEX_MODEL_NAME: str
+        LLAMAINDEX_EMBEDDING_MODEL_NAME: str
 
-def get_embeddings(text):
-    """
-    Generate embeddings for the given text using Ollama.
-    """
-    response = model.embed(text)
-    return response['embedding']
+    def __init__(self):
+        """Initialize the pipeline with default environment variables."""
+        self.documents = None
+        self.index = None
 
-def librarian_agent(subject):
-    """
-    Retrieve relevant documents from the vector store based on the subject.
-    """
-    subject_embedding = get_embeddings(subject)
-    # Perform similarity search (top 10 results)
-    results = vector_store.search(embedding=subject_embedding, top_k=10)
-    
-    documents = []
-    for result in results:
-        doc_id = result['id']
-        filepath = os.path.join(DOCUMENTS_DIR, doc_id)
-        if os.path.exists(filepath):
-            with open(filepath, 'r', encoding='utf-8') as file:
-                documents.append(file.read())
-    return documents
+        # Load valves (configuration settings) from environment variables or use default values
+        self.valves = self.Valves(
+            **{
+                "LLAMAINDEX_OLLAMA_BASE_URL": os.getenv("LLAMAINDEX_OLLAMA_BASE_URL", "http://localhost:11434"),
+                "LLAMAINDEX_MODEL_NAME": os.getenv("LLAMAINDEX_MODEL_NAME", "llama3"),
+                "LLAMAINDEX_EMBEDDING_MODEL_NAME": os.getenv("LLAMAINDEX_EMBEDDING_MODEL_NAME", "nomic-embed-text"),
+            }
+        )
 
-def outliner_agent(documents):
-    """
-    Generate a detailed outline based on the retrieved documents.
-    """
-    prompt = (
-        "Based on the following information, create a comprehensive and thoughtful outline for a book on the subject.\n\n"
-        + "\n\n".join(documents)
-    )
-    response = model.generate(prompt)
-    return response['text']
+    async def on_startup(self):
+        """Load the Llama Index and set up embeddings and LLM configurations during startup."""
+        from llama_index.embeddings.ollama import OllamaEmbedding
+        from llama_index.llms.ollama import Ollama
+        from llama_index import VectorStoreIndex, SimpleDirectoryReader
 
-def technical_writer_agent(outline):
-    """
-    Expand the outline into detailed book content.
-    """
-    prompt = (
-        "Using the following outline, write a detailed and comprehensive book on the subject.\n\n"
-        + outline
-    )
-    response = model.generate(prompt)
-    return response['text']
+        # Configure the embedding model and LLM using the valves (settings)
+        embedding_model = OllamaEmbedding(
+            model_name=self.valves.LLAMAINDEX_EMBEDDING_MODEL_NAME,
+            base_url=self.valves.LLAMAINDEX_OLLAMA_BASE_URL,
+        )
+        llm_model = Ollama(
+            model=self.valves.LLAMAINDEX_MODEL_NAME,
+            base_url=self.valves.LLAMAINDEX_OLLAMA_BASE_URL,
+        )
 
-def main(subject):
-    """
-    Orchestrate the pipeline to generate a book based on the subject.
-    """
-    print(f"Starting pipeline for subject: {subject}\n")
-    
-    # Step 1: Librarian Agent retrieves relevant documents
-    print("Librarian Agent: Retrieving relevant documents...")
-    documents = librarian_agent(subject)
-    if not documents:
-        print("No relevant documents found.")
-        return
-    print(f"Retrieved {len(documents)} documents.\n")
-    
-    # Step 2: Outliner Agent creates an outline
-    print("Outliner Agent: Creating outline...")
-    outline = outliner_agent(documents)
-    print("Outline created successfully.\n")
-    
-    # Step 3: Technical Writer Agent fleshes out the outline
-    print("Technical Writer Agent: Writing book content...")
-    book_content = technical_writer_agent(outline)
-    print("Book content generated successfully.\n")
-    
-    return book_content
+        # Read documents from the shared directory (ensure /app/pipelines/data exists and has documents)
+        self.documents = SimpleDirectoryReader("/app/pipelines/data").load_data()
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python pipeline.py \"Subject A\"")
-        sys.exit(1)
-    
-    subject = sys.argv[1]
-    book = main(subject)
-    
-    if book:
-        # Save the book to a file
-        output_dir = 'C:\\Ollama\\GeneratedBooks'
-        os.makedirs(output_dir, exist_ok=True)
-        book_filename = f"{subject.replace(' ', '_')}_book.txt"
-        book_path = os.path.join(output_dir, book_filename)
-        with open(book_path, 'w', encoding='utf-8') as f:
-            f.write(book)
-        print(f"Book saved to {book_path}")
+        # Create a vector store index for querying
+        self.index = VectorStoreIndex.from_documents(
+            self.documents,
+            embed_model=embedding_model,
+            llm=llm_model,
+        )
+        print("Pipeline initialized successfully with the following models:")
+        print(f"Embedding Model: {self.valves.LLAMAINDEX_EMBEDDING_MODEL_NAME}")
+        print(f"LLM Model: {self.valves.LLAMAINDEX_MODEL_NAME}")
+
+    async def on_shutdown(self):
+        """Handle any cleanup operations when the server shuts down."""
+        print("Shutting down the pipeline...")
+        pass
+
+    def pipe(
+        self, user_message: str, model_id: str, messages: List[dict], body: dict
+    ) -> Union[str, Generator, Iterator]:
+        """Process incoming messages and generate a response using the Llama Index."""
+        print(f"Received message: {user_message}")
+
+        # Create a query engine for searching the index
+        query_engine = self.index.as_query_engine(streaming=True)
+
+        # Use the query engine to retrieve relevant documents and return the response as a generator
+        response = query_engine.query(user_message)
+
+        # Return the generated response
+        return response.response_gen

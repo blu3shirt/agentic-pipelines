@@ -10,10 +10,11 @@ fi
 
 # Define the target CPU utilization percentage
 TARGET_CPU_UTILIZATION=75  # Adjust this value based on your performance goals
+MAX_THREADS=$(nproc)       # Use the maximum number of cores available
+MIN_THREADS=4              # Set a minimum thread count for stability
 
 # Function to display CPU utilization using /proc/stat
 function get_cpu_usage() {
-    # Read CPU statistics from /proc/stat
     read cpu user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat
     cpu_idle="$idle"
     cpu_total=$((user + nice + system + idle + iowait + irq + softirq + steal))
@@ -33,11 +34,11 @@ function calculate_cpu_usage() {
     echo "$cpu_usage"
 }
 
-# Function to run a dummy CPU-intensive task to simulate load
+# Function to simulate load using a configurable number of threads
 function simulate_load() {
     local threads=$1
     echo "Running test with $threads threads..."
-    
+
     # Create a background job for each thread to generate CPU load
     for ((i=1; i<=threads; i++)); do
         (while : ; do : ; done) &
@@ -47,9 +48,64 @@ function simulate_load() {
     sleep 3
 }
 
-# Function to stop all background jobs (cleanup)
+# Function to stop all background jobs
 function stop_all_jobs() {
     kill $(jobs -p) &> /dev/null
+}
+
+# Function to dynamically adjust threads based on CPU utilization
+function adjust_threads() {
+    local target_util=$1
+    local optimal_threads=$2
+    local step_size=$3
+
+    read prev_idle prev_total < <(get_cpu_usage)
+    echo "Baseline CPU usage recorded."
+
+    while true; do
+        # Run a test load with the current number of threads
+        simulate_load $optimal_threads
+
+        # Capture CPU usage after the test
+        read curr_idle curr_total < <(get_cpu_usage)
+
+        # Calculate CPU usage percentage
+        cpu_usage=$(calculate_cpu_usage $prev_idle $prev_total $curr_idle $curr_total)
+
+        # Output CPU usage results
+        echo "CPU Usage with $optimal_threads threads: $cpu_usage%"
+
+        # Check if the current CPU usage is within the acceptable range
+        if [ $cpu_usage -ge $((target_util - 5)) ] && [ $cpu_usage -le $((target_util + 5)) ]; then
+            echo "Optimal thread count found: $optimal_threads threads with $cpu_usage% CPU usage."
+            break
+        fi
+
+        # Dynamically adjust threads based on CPU feedback
+        if [ $cpu_usage -lt $target_util ]; then
+            optimal_threads=$((optimal_threads + step_size))
+        else
+            optimal_threads=$((optimal_threads - step_size))
+        fi
+
+        # Prevent overshooting thread count limits
+        if [ $optimal_threads -ge $MAX_THREADS ]; then
+            optimal_threads=$MAX_THREADS
+        elif [ $optimal_threads -le $MIN_THREADS ]; then
+            optimal_threads=$MIN_THREADS
+        fi
+
+        # Store baseline for next comparison
+        prev_idle=$curr_idle
+        prev_total=$curr_total
+
+        # Stop current load before starting a new one
+        stop_all_jobs
+    done
+
+    # Cleanup after finding optimal thread count
+    stop_all_jobs
+    echo "$optimal_threads"
 }
 
 # Function to set environment variables persistently in ~/.bashrc
@@ -81,53 +137,13 @@ function set_environment_variables() {
     echo "NUMEXPR_MAX_THREADS=$NUMEXPR_MAX_THREADS"
 }
 
-# Main script logic to optimize thread count based on target CPU utilization
-echo "Starting Ollama optimization script..."
+# Main script logic to dynamically optimize thread count based on target CPU utilization
+echo "Starting dynamic optimization based on target CPU utilization..."
 echo "Target CPU Utilization: $TARGET_CPU_UTILIZATION%"
 echo "Detected $(nproc) total cores."
 
-# Record baseline CPU usage before running any load
-read prev_idle prev_total < <(get_cpu_usage)
-echo "Baseline CPU usage recorded."
-
-# Start with a low number of threads and gradually increase until target CPU utilization is reached
-optimal_threads=4
-step_size=2
-
-while [ $optimal_threads -le $(nproc) ]; do
-    echo "Testing with $optimal_threads threads..."
-
-    # Run a test load with the current number of threads
-    simulate_load $optimal_threads
-
-    # Capture CPU usage after the test
-    read curr_idle curr_total < <(get_cpu_usage)
-
-    # Calculate CPU usage percentage
-    cpu_usage=$(calculate_cpu_usage $prev_idle $prev_total $curr_idle $curr_total)
-
-    # Output CPU usage results
-    echo "CPU Usage with $optimal_threads threads: $cpu_usage%"
-
-    # Check if the current CPU usage is close to the target
-    if [ $cpu_usage -ge $((TARGET_CPU_UTILIZATION - 5)) ] && [ $cpu_usage -le $((TARGET_CPU_UTILIZATION + 5)) ]; then
-        echo "Optimal thread count found: $optimal_threads threads with $cpu_usage% CPU usage."
-        break
-    fi
-
-    # Increase the number of threads for the next iteration
-    optimal_threads=$((optimal_threads + step_size))
-
-    # Store baseline for next comparison
-    prev_idle=$curr_idle
-    prev_total=$curr_total
-
-    # Stop current load before starting a new one
-    stop_all_jobs
-done
-
-# Cleanup after finding optimal thread count
-stop_all_jobs
+# Run the dynamic adjustment to find the optimal thread count
+optimal_threads=$(adjust_threads $TARGET_CPU_UTILIZATION 8 2)
 
 # Set and persist the environment variables for the optimal thread count
 set_environment_variables $optimal_threads
