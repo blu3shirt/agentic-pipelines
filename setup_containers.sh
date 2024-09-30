@@ -26,6 +26,11 @@ if ! command -v docker &> /dev/null; then
   exit 1
 fi
 
+# Prompt the user for the API key
+echo "Please enter your API key for the pipeline configuration:"
+read -s SAMPLE_API_KEY  # Read the API key without echoing it to the console
+echo "API key captured."
+
 # Ensure the host path exists
 if [ ! -d "$HOST_PATH" ]; then
   echo "Host path $HOST_PATH does not exist. Creating it now..."
@@ -60,7 +65,7 @@ print_bold "Pulling the latest images for Pipelines and Open WebUI..."
 docker pull ghcr.io/open-webui/pipelines:main || { echo "Failed to pull Pipelines image."; exit 1; }
 docker pull ghcr.io/open-webui/open-webui:main || { echo "Failed to pull Open WebUI image."; exit 1; }
 
-# Run the Pipelines Container using the Shared `the_collective` Volume
+# Run the Pipelines Container using the Shared `the_collective` Volume and user-provided API key
 print_bold "Starting the Pipelines container..."
 docker run -d \
   --name pipelines \
@@ -71,6 +76,7 @@ docker run -d \
   -e HOST=0.0.0.0 \
   -e PORT=9099 \
   -e RESET_PIPELINES_DIR=true \
+  -e SAMPLE_API_KEY="$SAMPLE_API_KEY" \
   --add-host=host.docker.internal:host-gateway \
   -v $VOLUME_NAME:/app/pipelines \
   -v $VOLUME_NAME:/app/backend/data \
