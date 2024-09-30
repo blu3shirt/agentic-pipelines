@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from llama_index import GPTVectorStoreIndex, SimpleDirectoryReader
 import os
 
-class CustomRAGDocumentPipeline:
+class Pipeline:
     class Valves(BaseModel):
         # Define valves (configuration values) for document path and other settings
         DOCUMENT_PATH: str = "/app/backend/data/documents"  # Default document path for documents
