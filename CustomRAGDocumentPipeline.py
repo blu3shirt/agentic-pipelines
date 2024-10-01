@@ -12,7 +12,7 @@ from typing import List, Union, Generator, Iterator, Optional
 from pydantic import BaseModel
 import os
 import requests
-from llama_index import GPTVectorStoreIndex, SimpleDirectoryReader, ServiceContext
+from llama_index import VectorStoreIndex, SimpleDirectoryReader, ServiceContext
 from llama_index.llms.base import LLM, LLMMetadata
 
 class OllamaLLM(LLM):
@@ -79,7 +79,7 @@ class Pipeline:
         print(f"Loading documents from: {document_path}")
 
         self.documents = SimpleDirectoryReader(document_path).load_data()
-        self.index = GPTVectorStoreIndex.from_documents(
+        self.index = VectorStoreIndex.from_documents(
             self.documents,
             service_context=self.service_context
         )
