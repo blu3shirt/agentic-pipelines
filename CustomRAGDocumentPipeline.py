@@ -5,7 +5,7 @@ date: 2024-05-30
 version: 1.0
 license: MIT
 description: A pipeline for retrieving relevant information from a knowledge base using the Llama Index library with Ollama as the language model.
-requirements: llama-index, requests
+requirements: llama-index==0.6.5, requests
 """
 
 from typing import List, Union, Generator, Iterator, Optional
@@ -13,7 +13,8 @@ from pydantic import BaseModel
 import os
 import requests
 from llama_index import VectorStoreIndex, SimpleDirectoryReader, ServiceContext
-from llama_index.llms.base import LLM, LLMMetadata, ChatMessage
+from llama_index.llms.base import LLMMetadata, ChatMessage
+from llama_index.llms.base import LLM
 
 
 class OllamaLLM(LLM):
@@ -26,7 +27,7 @@ class OllamaLLM(LLM):
     def llm_type(self) -> str:
         return "ollama"
 
-    def _generate(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         url = f"{self.base_url}/api/generate"
 
         payload = {
@@ -55,7 +56,7 @@ class Pipeline:
     class Valves(BaseModel):
         DOCUMENT_PATH: str = "/app/backend/data/documents"  # Default document path
         MODEL_NAME: str = "llama2"  # Ollama model name
-        BASE_URL: str = "http://localhost:11434"  # Ollama API base URL
+        BASE_URL: str = "http://host.docker.internal:11434"  # Ollama API base URL
 
     def __init__(self):
         self.name = "Ollama Llama Index Pipeline"
