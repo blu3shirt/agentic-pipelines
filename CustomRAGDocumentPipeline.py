@@ -5,17 +5,15 @@ date: 2024-05-30
 version: 1.0
 license: MIT
 description: A pipeline for retrieving relevant information from a knowledge base using the Llama Index library with Ollama as the language model.
-requirements: llama-index==0.6.5, requests
+requirements: llama-index, requests
 """
 
 from typing import List, Union, Generator, Iterator, Optional
 from pydantic import BaseModel
 import os
 import requests
-from llama_index import VectorStoreIndex, SimpleDirectoryReader, ServiceContext
-from llama_index.llms.base import LLMMetadata, ChatMessage
-from llama_index.llms.base import LLM
-
+from llama_index import GPTVectorStoreIndex, SimpleDirectoryReader, ServiceContext
+from llama_index.llms.base import LLM, LLMMetadata
 
 class OllamaLLM(LLM):
     def __init__(self, model_name: str = "llama2", base_url: str = "http://localhost:11434", context_window: int = 2048):
@@ -51,7 +49,6 @@ class OllamaLLM(LLM):
         else:
             raise Exception(f"Ollama API request failed with status code {response.status_code}: {response.text}")
 
-
 class Pipeline:
     class Valves(BaseModel):
         DOCUMENT_PATH: str = "/app/backend/data/documents"  # Default document path
@@ -82,7 +79,7 @@ class Pipeline:
         print(f"Loading documents from: {document_path}")
 
         self.documents = SimpleDirectoryReader(document_path).load_data()
-        self.index = VectorStoreIndex.from_documents(
+        self.index = GPTVectorStoreIndex.from_documents(
             self.documents,
             service_context=self.service_context
         )
